@@ -214,8 +214,8 @@ class DetailedResolution(object):
               "\n"
               "\n"
               "Frequency:\n"
-              "Refresh rate:\t{a.v_rate}\t{a.actual_v_rate}\n"
-              "Horizontal:\t{a.h_rate}\t{a.actual_h_rate}\n"
+              "Refresh rate:\t{a.v_rate}\tActual: {a.actual_v_rate}\n"
+              "Horizontal:\t{a.h_rate}\tActual: {a.actual_h_rate}\n"
               "Pixclock: \t{a.p_clock}\tInterlaced: {a.interlaced}")
         
         return fs.format(a=self,
@@ -374,6 +374,7 @@ class DetailedResolution(object):
         return True
 
     def set_v_rate(self, value):
+        """Indicate VRate in 1/1000 Hz (60000 = 60Hz)"""
         self.v_rate = value
         if self.timing == 0:
             self.last_rate = 0
@@ -382,6 +383,7 @@ class DetailedResolution(object):
         return True
 
     def set_h_rate(self, value):
+        """Indicate HRate in 1/1000 Hz (15000000 = 15000 Hz = 15 kHz)"""
         self.h_rate = value
         self.last_rate = 1
         self.update()
@@ -389,6 +391,7 @@ class DetailedResolution(object):
         return True
 
     def set_p_clock(self, value):
+        """Indicate PClock in 10 kHz steps (960 = 9.6 MHz)"""
         self.p_clock = value
         self.last_rate = 2
         self.update()
@@ -1424,24 +1427,20 @@ class DetailedResolution(object):
         return Constants.MIN_H_TOTAL[self.type] <= self.h_total <= Constants.MAX_H_TOTAL[self.type]
 
     def is_valid_v_active(self):
-        return Constants.MIN_V_ACTIVE <= self.v_active <= Constants.MAX_V_ACTIVE
+        return Constants.MIN_V_ACTIVE[self.type] <= self.v_active <= Constants.MAX_V_ACTIVE[self.type]
         pass
 
     def is_valid_v_front(self):
-        return Constants.MIN_V_FRONT <= self.v_front <= Constants.MAX_V_FRONT
-        pass
+        return Constants.MIN_V_FRONT[self.type] <= self.v_front <= Constants.MAX_V_FRONT[self.type]
 
     def is_valid_v_back(self):
-        return Constants.MIN_V_BACK <= self.v_back <= Constants.MAX_V_BACK
-        pass
+        return self.get_min_v_back(self.type) <= self.v_back <= self.get_max_v_back(self.type)
 
     def is_valid_v_blank(self):
-        return Constants.MIN_V_BLANK <= self.v_blank <= Constants.MAX_V_BLANK
-        pass
+        return self.get_min_v_blank(self.type) <= self.v_blank <= self.get_max_v_blank(self.type)
 
     def is_valid_v_total(self):
-        return Constants.MIN_V_TOTAL <= self.v_total <= Constants.MAX_V_TOTAL
-        pass
+        return self.get_min_v_total(self.type) <= self.v_total <= self.get_max_v_total(self.type)
 
     def is_valid_rate(self):
         if (self.timing == 0 and self.last_rate == 0):
@@ -1469,11 +1468,11 @@ class DetailedResolution(object):
         return Constants.MIN_P_CLOCK[self.type] <= self.p_clock <= Constants.MAX_P_CLOCK[self.type]
 
     def is_valid_actual_v_rate(self):
-        return Constants.MIN_ACTUAL_V_RATE[self.type] <= self.actual_v_rate <= Constants.MAX_ACTUAL_V_RATE[self.type]
+        return Constants.MIN_V_RATE[self.type] <= self.actual_v_rate <= Constants.MAX_V_RATE[self.type]
         pass
 
     def is_valid_actual_h_rate(self):
-        return Constants.MIN_ACTUAL_H_RATE[self.type] <= self.actual_h_rate <= Constants.MAX_ACTUAL_H_RATE[self.type]
+        return Constants.MIN_H_RATE[self.type] <= self.actual_h_rate <= Constants.MAX_H_RATE[self.type]
         pass
 
     def is_supported_h_active(self):

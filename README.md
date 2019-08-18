@@ -20,3 +20,9 @@ Heavily inspired and helped by [ToastyX](https://www.patreon.com/ToastyX)'s [Cus
 Worked with [this](http://www.epanorama.net/faq/vga2rgb/calc.html) and [that](http://www.geocities.ws/podernixie/htpc/modes-en.html#escpal) in mind.
 
 Support me on [Patreon](https://www.patreon.com/Matcha) if you want.
+
+## Licensing
+
+This code is licensed under the GNU GPL v3. If you need a specific license for this product in order to embed it into proprietary software or other purposes, feel free to make me a request on Patreon for licensing.
+
+If you need a more advanced tool on Windows, see to it with ToastyX.

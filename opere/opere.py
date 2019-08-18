@@ -26,7 +26,11 @@ if they are correlated.
 
 An Opere object exposes a call(obj) method that can be used to
 compose together operations researches.
+
+For the moment, the program works OK with one goal but this hardly
+qualifies as operational research. 
 """
+
 import itertools
 import collections
 import logging
@@ -54,7 +58,6 @@ class Opere(object):
             self.goals_values[goal].append(self.goals_states[goal])
 
         while self.steps_left > 0:
-            logger.debug("Steps left: %s", self.steps_left)
             for goal in self.goals:
                 old_value = self.goals_states[goal]
                 new_value = goal(obj)
@@ -62,10 +65,9 @@ class Opere(object):
                 self.goals_values[goal].append(new_value)
                 self.goals_derivatives[goal].append(new_value - old_value)
             if all(a == 0 for a in self.goals_states.values()):
-                logger.debug("Goals all reached")
+                logger.debug("Goals all reached in %s steps", self.max_steps - self.steps_left)
                 return True
             step = next(steps_cycle)
-            logger.debug("Running step %s", step.__name__)
             step(obj)
             self.steps_left -= 1
         return False

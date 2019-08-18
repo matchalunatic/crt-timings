@@ -16,7 +16,7 @@ a.set_v_rate(60000)
 old_a = str(a)
 
 a.set_timing(0)
-opera = opere.OpereTVResolution()
+opera = opere.OpereTVResolution(pixel_clock=1920)
 opera.call(a)
 
 new_a = str(a)

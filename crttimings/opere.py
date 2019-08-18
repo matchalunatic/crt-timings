@@ -34,7 +34,6 @@ class OpereTVResolution(opere.Opere):
             direction = obj.p_clock - (goal + (0.02 * goal))
         else:
             direction = 0
-        logger.debug("p_clock: %s goal: %s", obj.p_clock, goal)
         return direction
 
     def goal_h_rate(self, obj):
@@ -58,7 +57,7 @@ class OpereTVResolution(opere.Opere):
         return direction
 
     def step_h_front_less(self, obj):
-        if self.goals_states[self.goal_pixel_clock] == -1:
+        if self.goals_states[self.goal_pixel_clock] < 0:
             direction = -1
         else:
             direction = 1
@@ -68,7 +67,7 @@ class OpereTVResolution(opere.Opere):
             obj.set_h_front(obj.h_front - 8 * direction)
 
     def step_h_sync_less(self, obj):
-        if self.goals_states[self.goal_pixel_clock] == -1:
+        if self.goals_states[self.goal_pixel_clock] < 0:
             direction = -1
         else:
             direction = 1
@@ -78,7 +77,7 @@ class OpereTVResolution(opere.Opere):
             obj.set_h_sync(obj.h_sync - 8 * direction)
 
     def step_h_back_less(self, obj):
-        if self.goals_states[self.goal_pixel_clock] == -1:
+        if self.goals_states[self.goal_pixel_clock] < 0:
             direction = -1
         else:
             direction = 1
@@ -88,7 +87,7 @@ class OpereTVResolution(opere.Opere):
             obj.set_h_back(obj.h_back - 8 * direction)
 
     def step_v_front_less(self, obj):
-        if self.goals_states[self.goal_pixel_clock] == -1:
+        if self.goals_states[self.goal_pixel_clock] < 0:
             direction = -1
         else:
             direction = 1
@@ -99,7 +98,7 @@ class OpereTVResolution(opere.Opere):
             obj.set_v_front(obj.v_front - 1 * direction)
 
     def step_v_sync_less(self, obj):
-        if self.goals_states[self.goal_pixel_clock] == -1:
+        if self.goals_states[self.goal_pixel_clock] < 0:
             direction = -1
         else:
             direction = 1
@@ -109,7 +108,7 @@ class OpereTVResolution(opere.Opere):
             obj.set_v_sync(obj.v_sync - 1 * direction)
 
     def step_v_back_less(self, obj):
-        if self.goals_states[self.goal_pixel_clock] == -1:
+        if self.goals_states[self.goal_pixel_clock] < 0:
             direction = -1
         else:
             direction = 1

@@ -1,5 +1,3 @@
-"""
-
 class Constants(object):
     BLANK = int(-2147483647)
 

@@ -27,12 +27,14 @@ def inrange(value, min_v, max_v):
     return value
 
 
-def requires_hvr(when_not_met=False):
+def requires_hvr(when_not_met=False, raise_exception=None):
     """Decorator for functions that require h_active, v_active and v_rate"""
     def deco(f):
         @functools.wraps(f)
         def _(*args, **kwargs):
             if not (self.is_supported_h_active() and self.is_supported_v_active() and self.is_supported_v_rate()):
+                if raise_exception is not None:
+                    raise raise_exception
                 return when_not_met
             return f(*args, **kwargs)
         return _
@@ -45,7 +47,7 @@ class DetailedResolution(object):
        that class.
 
        Todo:
-        port the properties set_xxx to proper @property
+        port the properties set_xxx to proper @property (maybe in a wrapper class)
         make a nice text interface
         work usability
         operational research
@@ -452,7 +454,7 @@ class DetailedResolution(object):
             self.v_rate_i = self.v_rate * 2
         return True
 
-    @requires_hvr
+    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
     def calculate_native(self, digital):
         searched = None
         for index, item in enumerate(Constants.LCD_NATIVE):
@@ -480,7 +482,7 @@ class DetailedResolution(object):
                 self.calculate_crt_standard()
             self.p_clock = self.p_clock // 25 * 25
 
-    @requires_hvr
+    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
     def calculate_lcd_standard(self):
         self.h_polarity = True
         self.v_polarity = False
@@ -515,7 +517,7 @@ class DetailedResolution(object):
         self.h_rate = self.actual_h_rate
         return self.is_valid_rate()
 
-    @requires_hvr
+    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
     def calculate_lcd_native(self):
         self.h_polarity = True
         self.v_polarity = False
@@ -555,7 +557,7 @@ class DetailedResolution(object):
         self.h_rate = self.actual_h_rate
         return self.is_valid_rate()
 
-    @requires_hvr
+    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
     def calculate_lcd_reduced(self):
         """needs review and has been factorized"""
         self.h_polarity = True
@@ -741,7 +743,7 @@ class DetailedResolution(object):
                 self.recompute_blanking_and_clock()
 
 
-    @requires_hvr
+    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
     def calculate_crt_standard(self):
         self.h_polarity = False
         self.v_polarity = True
@@ -784,7 +786,7 @@ class DetailedResolution(object):
 
 
 
-    @requires_hvr
+    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
     def calculate_old_standard(self):
         self.h_polarity = False
         self.v_polarity = True
@@ -825,7 +827,7 @@ class DetailedResolution(object):
         return self.is_valid_rate()
 
 
-    @requires_hvr
+    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
     def calculate_cvt(self):
         self.h_polarity = False
         self.v_polarity = True
@@ -848,7 +850,7 @@ class DetailedResolution(object):
 
 
 
-    @requires_hvr
+    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
     def calculate_cvtrb(self):
         self.h_polarity = True
         self.v_polarity = False
@@ -869,7 +871,7 @@ class DetailedResolution(object):
         self.h_rate = self.actual_h_rate
         return self.is_valid_rate()
 
-    @requires_hvr
+    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
     def calculate_gtf(self):
         self.h_polarity = False
         self.v_polarity = True

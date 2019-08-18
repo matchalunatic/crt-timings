@@ -1,18 +1,3 @@
-import functools
-"""crttimings: compute good resolution timings for a given resolution on
-   CRT displays.
-   
-   By no means a perfect utility, built to serve my own purpose but migh_t
-   be useful and could maybe be improved to support more stuff.
-
-   Equations and computations come from ToastyX's Custom Resolution Utility.
-   More inspiration:
-   - h_ttp://www.geocities.ws/podernixie/h_tpc/modes-en.h_tml#escpal
-   - h_ttp://www.epanorama.net/faq/vga2rgb/calc.h_tml
-
-   Usage:
-     crttimings --hres=<hres> --vres=<vres> --pixel-clock=<hertz>... [--interlace|--no-interlace]
-
 """
 
 class Constants(object):

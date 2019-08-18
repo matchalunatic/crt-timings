@@ -1,12 +1,12 @@
 """crttimings: compute good resolution timings for a given resolution on
    CRT displays.
    
-   By no means a perfect utility, built to serve my own purpose but migh_t
+   By no means a perfect utility, built to serve my own purpose but might
    be useful and could maybe be improved to support more stuff.
 
    Equations and computations come from ToastyX's Custom Resolution Utility.
    More inspiration:
-   - http://www.geocities.ws/podernixie/h_tpc/modes-en.html#escpal
+   - http://www.geocities.ws/podernixie/htpc/modes-en.html#escpal
    - http://www.epanorama.net/faq/vga2rgb/calc.html
 
    Usage:

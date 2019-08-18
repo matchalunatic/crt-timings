@@ -15,7 +15,22 @@
 """
 import functools
 import json
+import logging
+
 from .constants import Constants, Constants2
+
+logger = logging.getLogger(__name__)
+
+
+class DetailedResolutionInterface(object):
+    def connect(self, detres):
+        self.detailed_resolution = detres
+
+    def refresh(self):
+        self.refreshing = True
+
+
+
 
 def inrange(value, min_v, max_v):
     if value == Constants.BLANK:
@@ -27,18 +42,29 @@ def inrange(value, min_v, max_v):
     return value
 
 
-def requires_hvr(when_not_met=False, raise_exception=None):
-    """Decorator for functions that require h_active, v_active and v_rate"""
-    def deco(f):
-        @functools.wraps(f)
-        def _(*args, **kwargs):
-            if not (self.is_supported_h_active() and self.is_supported_v_active() and self.is_supported_v_rate()):
-                if raise_exception is not None:
-                    raise raise_exception
-                return when_not_met
-            return f(*args, **kwargs)
-        return _
-    return deco
+
+
+def requires_hvr(method=None, when_not_met=False, raise_exception=None):
+    if method is None:
+        return functools.partial(requires_hvr, when_not_met=when_not_met, raise_exception=raise_exception)
+    @functools.wraps(method)
+    def f(self, *args, **kwargs):
+        if not (self.is_supported_h_active() and self.is_supported_v_active() and self.is_supported_v_rate()):
+            if raise_exception is not None:
+                raise raise_exception
+            logger.debug("requires_hvr: conditions not met:\n\tHActive: %s\n\tVActive: %s\n\tVRate: %s", self.is_supported_h_active(), self.is_supported_v_active(), self.is_supported_v_rate())
+            return when_not_met
+        return method(self, *args, **kwargs)
+    return f
+
+def new_detailed_resolution():
+    a = DetailedResolution(int(True))
+    a.v_active = 1080
+    a.h_active = 1920
+    a.v_rate = 600
+    a.set_timing(4)
+    a.start()
+    return a
 
 class DetailedResolution(object):
     """This is mostly a port of DetailedResolutionClass.cpp from ToastyX's CRU
@@ -52,7 +78,8 @@ class DetailedResolution(object):
         work usability
         operational research
     """
-    def __init__(self):
+    def __init__(self, newtype):
+        self.type = newtype
         self.timing = 0
         self.last = 0
         self.h_active = Constants.BLANK
@@ -94,6 +121,52 @@ class DetailedResolution(object):
         self.v_total_i   = Constants.BLANK
         self.v_rate_i    = Constants.BLANK
 
+        self.reset_available = False
+        self.reset_h_active = Constants.BLANK
+        self.reset_h_front = Constants.BLANK
+        self.reset_h_sync = Constants.BLANK
+        self.reset_h_blank = Constants.BLANK
+        self.reset_h_polarity = False
+        self.reset_v_active = Constants.BLANK
+        self.reset_v_front = Constants.BLANK
+        self.reset_v_sync = Constants.BLANK
+        self.reset_v_blank = Constants.BLANK
+        self.reset_v_polarity = False
+        self.reset_stereo = False
+        self.reset_p_clock = Constants.BLANK
+        self.reset_interlaced = False
+        self.reset_native = False
+
+
+    def start(self):
+        self.calculate_h_back()
+        self.calculate_h_total()
+        self.calculate_v_back()
+        self.calculate_v_total()
+        self.calculate_actual_v_rate()
+        self.calculate_actual_h_rate()
+        self.v_rate = (self.actual_v_rate + 500) // 1000 * 1000
+        self.h_rate = self.actual_h_rate
+        old_p_clock = self.p_clock
+        self.calculate_p_clock_from_v_rate()
+        if self.p_clock != old_p_clock:
+            if self.v_rate % 24000 == 0 or self.v_rate % 30000 == 0:
+                self.v_rate = self.v_rate * 1000 // 1001
+                self.calculate_p_clock_from_v_rate()
+
+        if self.p_clock != old_p_clock:
+            self.v_rate = (self.actual_v_rate + 50) // 100 * 100
+            self.calculate_p_clock_from_v_rate()
+
+        if self.p_clock != old_p_clock:
+            self.v_rate = self.actual_v_rate
+            self.p_clock = old_p_clock
+
+        self.update_interlaced()
+        self.update_interlaced_rate()
+        return True
+
+
     def _as_dict(self):
         return dict(
         h_active=self.h_active,
@@ -129,8 +202,29 @@ class DetailedResolution(object):
         )
         
     def __str__(self):
+        fs = ("Parameters\n"
+              "\tHorizontal\tVertical\n"
+              "Active:    \t{a.h_active}\t{a.v_active}\n"
+              "Front porch:\t{a.h_front}\t{a.v_front}\n"
+              "Sync width:\t{a.h_sync}\t{a.v_sync}\n"
+              "Back porch:\t{a.h_back}\t{a.v_back}\n"
+              "Blanking:\t{a.h_blank}\t{a.v_blank}\n"
+              "Total:\t\t{a.h_total}\t{a.v_total}\n"
+              "Sync polarity:\t{h_pol}\t{v_pol}\n"
+              "\n"
+              "\n"
+              "Frequency:\n"
+              "Refresh rate:\t{a.v_rate}\t{a.actual_v_rate}\n"
+              "Horizontal:\t{a.h_rate}\t{a.actual_h_rate}\n"
+              "Pixclock: \t{a.p_clock}\tInterlaced: {a.interlaced}")
+        
+        return fs.format(a=self,
+                         h_pol="+" if self.h_polarity else "-",
+                         v_pol="+" if self.v_polarity else "-")
         return json.dumps(self._as_dict(), indent=4, sort_keys=True)
         
+
+
 
     def is_last_rate(self, value):
         return value == self.last_rate
@@ -301,36 +395,57 @@ class DetailedResolution(object):
         self.update_interlaced_rate()
         return True
 
+
+    def interlaced_possible(self):
+        return Constants.INTERLACED_AVAILABLE[self.type]
+
+    def get_interlaced(self):
+        return self.interlaced
+
     def set_interlaced(self, value):
+        # the original code uses xor swaps. let's be more conservative
+        # as this is not supported in python and harms portability
         self.interlaced = bool(value)
-        self.v_active ^= self.v_active_i
-        self.v_active_i ^= self.v_active
-        self.v_active ^= self.v_active_i
+        n = self.v_active
+        self.v_active = self.v_active_i
+        self.v_active_i = n
 
-        self.v_front ^= self.v_front_i
-        self.v_front_i ^= self.v_front
-        self.v_front ^= self.v_front_i
+        n = self.v_front
+        self.v_front = self.v_front_i
+        self.v_front_i = n
 
-        self.v_sync ^= self.v_sync_i
-        self.v_sync_i ^= self.v_sync
-        self.v_sync ^= self.v_sync_i
+        n = self.v_sync
+        self.v_sync = self.v_sync_i
+        self.v_sync_i = n
 
-        self.v_back ^= self.v_back_i
-        self.v_back_i ^= self.v_back
-        self.v_back ^= self.v_back_i
+        n = self.v_back
+        self.v_back = self.v_back_i
+        self.v_back_i = n
 
-        self.v_blank ^= self.v_blank_i
-        self.v_blank_i ^= self.v_blank
-        self.v_blank ^= self.v_blank_i
+        n = self.v_blank
+        self.v_blank = self.v_blank_i
+        self.v_blank_i = n
 
-        self.v_total ^= self.v_total_i
-        self.v_total_i ^= self.v_total
-        self.v_total ^= self.v_total_i
+        n = self.v_total
+        self.v_total = self.v_total_i
+        self.v_total_i = n
 
-        self.v_rate ^= self.v_rate_i
-        self.v_rate_i ^= self.v_rate
-        self.v_rate ^= self.v_rate_i
-        self.update()
+        n = self.v_rate
+        self.v_rate = self.v_rate_i
+        self.v_rate_i = n
+
+        return self.update()
+
+    def native_possible(self):
+        return Constants.NATIVE_AVAILABLE[self.type]
+
+    def get_native(self):
+        return self.native
+
+    def set_native(self, value):
+        self.native = value
+        return True
+
     @property
     def interlaced_i(self):
         if self.interlaced:
@@ -369,46 +484,99 @@ class DetailedResolution(object):
                 )
     
 
+    def reset(self):
+        if not self.reset_available:
+            return False
+        self.timing = 0
+        self.h_active = self.reset_h_active
+        self.h_front = self.reset_h_front
+        self.h_sync = self.reset_h_sync
+        self.h_blank = self.reset_h_blank
+        self.h_polarity = self.reset_h_polarity
+        self.v_active = self.reset_v_active
+        self.v_front = self.reset_v_front
+        self.v_sync = self.reset_v_sync
+        self.v_blank = self.reset_v_blank
+        self.v_polarity = self.reset_v_polarity
+        self.stereo = self.reset_stereo
+        self.p_clock = self.reset_p_clock
+        self.interlaced = self.reset_interlaced
+        self.native = self.reset_native
+        self.start()
+        return True
+
+    def update_reset(self):
+        self.reset_available = True
+        self.reset_h_active = self.h_active
+        self.reset_h_front = self.h_front
+        self.reset_h_sync = self.h_sync
+        self.reset_h_blank = self.h_blank
+        self.reset_h_polarity = self.h_polarity
+        self.reset_v_active = self.v_active
+        self.reset_v_front = self.v_front
+        self.reset_v_sync = self.v_sync
+        self.reset_v_blank = self.v_blank
+        self.reset_v_polarity = self.v_polarity
+        self.reset_stereo = self.stereo
+        self.reset_p_clock = self.p_clock
+        self.reset_interlaced = self.interlaced
+        self.reset_native = self.native
+        return True
+
+
     def update(self):
         ok = True
         if self.timing:
             if not (self.is_valid_timing() and self.timing_functions[self.timing] is not None):
+                logger.debug("Invalid timing")
                 ok = False
             if ok:
-                ok = self.timing_functions[self.timing]()
+                func = self.timing_functions[self.timing]
+                logger.debug("Timing function is %s", str(func.__name__))
+                ok = func()
             if not ok:
+                logger.debug("Timing function failed.")
                 self.h_front = self.h_sync = self.h_back = self.h_total = Constants.BLANK
                 self.v_front = self.v_sync = self.v_back = self.v_total = Constants.BLANK
                 self.p_clock = self.actual_v_rate = self.actual_h_rate = self.h_rate = Constants.BLANK
                 return False
+            logger.debug("Timing function succeeded")
             return True
+
+        logger.debug("Computing timings")
         if self.last == 0:
+            logger.debug("0: computing H/V blank and total")
             self.calculate_h_blank()
             self.calculate_h_total()
             self.calculate_v_blank()
             self.calculate_v_total()
         elif self.last == 1:
+            logger.debug("1: computing H/V back and total")
             self.calculate_h_back()
             self.calculate_h_total()
             self.calculate_v_back()
             self.calculate_v_total()
         elif self.last == 2:
+            logger.debug("2: computing H/V back and blank")
             self.calculate_h_back_from_h_total()
             self.calculate_h_blank()
             self.calculate_v_back_from_v_total()
             self.calculate_v_blank()
 
         if self.last_rate == 0:
+            logger.debug("0: computing PClock, setting h_rate")
             self.calculate_p_clock_from_v_rate()
             self.calculate_actual_v_rate()
             self.calculate_actual_h_rate()
             self.h_rate = self.actual_h_rate
         elif self.last_rate == 1:
+            logger.debug("1: computing PClock, setting v_rate")
             self.calculate_p_clock_from_h_rate()
             self.calculate_actual_v_rate()
             self.calculate_actual_h_rate()
             self.v_rate = self.actual_v_rate
         elif self.last_rate == 2:
+            logger.debug("2: setting v_rate and h_rate")
             self.calculate_actual_v_rate()
             self.calculate_actual_h_rate()
             self.v_rate = self.actual_v_rate
@@ -417,6 +585,7 @@ class DetailedResolution(object):
         return True
 
     def update_interlaced(self):
+        logger.debug("update_interlaced")
         self.v_active_i = self.v_active
         self.v_front_i = self.v_front
         self.v_sync_i = self.v_sync
@@ -424,11 +593,12 @@ class DetailedResolution(object):
 
         if self.is_supported_v_active() and self.interlaced:
             if self.v_active == 540 and self.v_front == 2 and self.v_sync == 5 and self.v_back == 15:
+                logger.debug("interlaced: qHD")
                 self.v_active_i = 1080
                 self.v_front_i = 4
                 self.v_sync_i = 5
                 self.v_back_i = 36
-            elif v_active < Constants.MAX_V_ACTIVE // 2:
+            elif self.v_active < Constants.MAX_V_ACTIVE[self.type] // 2:
                 self.v_active_i = self.v_active * 2
         elif self.is_supported_v_active() and self.v_active % 2 == 0:
             if self.v_active == 1080 and self.v_front == 4 and self.v_sync == 5 and self.v_back == 36:
@@ -454,7 +624,7 @@ class DetailedResolution(object):
             self.v_rate_i = self.v_rate * 2
         return True
 
-    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
+    @requires_hvr
     def calculate_native(self, digital):
         searched = None
         for index, item in enumerate(Constants.LCD_NATIVE):
@@ -481,8 +651,17 @@ class DetailedResolution(object):
             else:
                 self.calculate_crt_standard()
             self.p_clock = self.p_clock // 25 * 25
+        self.stereo = 0
+        self.calculate_actual_v_rate()
+        self.calculate_actual_h_rate()
+        self.v_rate = self.actual_v_rate
+        self.h_rate = self.actual_h_rate
+        self.update_interlaced()
+        self.update_interlaced_rate()
+        self.update_reset()
+        return True
 
-    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
+    @requires_hvr
     def calculate_lcd_standard(self):
         self.h_polarity = True
         self.v_polarity = False
@@ -517,7 +696,7 @@ class DetailedResolution(object):
         self.h_rate = self.actual_h_rate
         return self.is_valid_rate()
 
-    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
+    @requires_hvr
     def calculate_lcd_native(self):
         self.h_polarity = True
         self.v_polarity = False
@@ -557,7 +736,7 @@ class DetailedResolution(object):
         self.h_rate = self.actual_h_rate
         return self.is_valid_rate()
 
-    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
+    @requires_hvr
     def calculate_lcd_reduced(self):
         """needs review and has been factorized"""
         self.h_polarity = True
@@ -743,7 +922,7 @@ class DetailedResolution(object):
                 self.recompute_blanking_and_clock()
 
 
-    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
+    @requires_hvr
     def calculate_crt_standard(self):
         self.h_polarity = False
         self.v_polarity = True
@@ -774,7 +953,7 @@ class DetailedResolution(object):
             self.calculate_cvt()
             self.calculate_p_clock_from_v_rate()
             self.calculate_actual_v_rate()
-            self.v_rate = sef.actual_v_rate
+            self.v_rate = self.actual_v_rate
             self.calculate_cvt()
             self.calculate_p_clock_from_v_rate()
             self.v_rate = old_v_rate
@@ -782,11 +961,12 @@ class DetailedResolution(object):
         self.calculate_actual_v_rate()
         self.calculate_actual_h_rate()
         self.h_rate = self.actual_h_rate
+        logger.debug("calculate CRT Standard:\n\tVRate: %s\n\tHRate: %s\n\tPClock: %s\n\t",self.v_rate, self.h_rate, self.p_clock)
         return self.is_valid_rate()
 
 
 
-    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
+    @requires_hvr
     def calculate_old_standard(self):
         self.h_polarity = False
         self.v_polarity = True
@@ -827,7 +1007,7 @@ class DetailedResolution(object):
         return self.is_valid_rate()
 
 
-    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
+    @requires_hvr
     def calculate_cvt(self):
         self.h_polarity = False
         self.v_polarity = True
@@ -850,7 +1030,7 @@ class DetailedResolution(object):
 
 
 
-    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
+    @requires_hvr
     def calculate_cvtrb(self):
         self.h_polarity = True
         self.v_polarity = False
@@ -871,7 +1051,7 @@ class DetailedResolution(object):
         self.h_rate = self.actual_h_rate
         return self.is_valid_rate()
 
-    @requires_hvr(raise_exception=ValueError("Missing one of HVR"))
+    @requires_hvr
     def calculate_gtf(self):
         self.h_polarity = False
         self.v_polarity = True
@@ -1190,7 +1370,7 @@ class DetailedResolution(object):
         if not(self.is_supported_p_clock() and self.is_supported_h_total()):
             self.actual_h_rate = Constants.BLANK
             return False
-        self.actual_h_rate = self.p_clock * 10000 // self.h_total() 
+        self.actual_h_rate = self.p_clock * 10000 // self.h_total
         if not self.is_supported_actual_h_rate():
             self.actual_h_rate = Constants.BLANK
             return False
@@ -1229,23 +1409,19 @@ class DetailedResolution(object):
         pass
 
     def is_valid_h_active(self):
-        return Constants.MIN_H_ACTIVE <= self.h_active <= Constants.MAX_H_ACTIVE
+        return Constants.MIN_H_ACTIVE[self.type] <= self.h_active <= Constants.MAX_H_ACTIVE[self.type]
 
     def is_valid_h_front(self):
-        return Constants.MIN_H_FRONT <= self.h_front <= Constants.MAX_H_FRONT
-        pass
+        return Constants.MIN_H_FRONT[self.type] <= self.h_front <= Constants.MAX_H_FRONT[self.type]
 
     def is_valid_h_sync(self):
-        return Constants.MIN_H_SYNC <= self.h_sync <= Constants.MAX_H_SYNC
-        pass
+        return Constants.MIN_H_SYNC[self.type] <= self.h_sync <= Constants.MAX_H_SYNC[self.type]
 
     def is_valid_h_back(self):
-        return Constants.MIN_H_BACK <= self.h_back <= Constants.MAX_H_BACK
-        pass
+        return Constants.MIN_H_BACK[self.type] <= self.h_back <= Constants.MAX_H_BACK[self.type]
 
     def is_valid_h_total(self):
-        return Constants.MIN_H_TOTAL <= self.h_total <= Constants.MAX_H_TOTAL
-        pass
+        return Constants.MIN_H_TOTAL[self.type] <= self.h_total <= Constants.MAX_H_TOTAL[self.type]
 
     def is_valid_v_active(self):
         return Constants.MIN_V_ACTIVE <= self.v_active <= Constants.MAX_V_ACTIVE
@@ -1277,136 +1453,137 @@ class DetailedResolution(object):
         elif (self.v_rate == 0 and self.last_rate == 2):
             if not (self.is_valid_h_total() and self.is_valid_v_total()):
                 return self.is_valid_p_clock()
-        elif (self.v_rate != 0):
+        elif (self.timing != 0):
             if not (self.is_valid_h_active() and self.is_valid_v_active()):
                 return self.is_valid_v_rate()
         return self.is_valid_v_rate() and self.is_valid_h_rate() and self.is_valid_p_clock() and self.is_valid_actual_v_rate() and self.is_valid_actual_h_rate()
 
     def is_valid_v_rate(self):
-        return Constants.MIN_V_TOTAL <= self.v_total <= Constants.MAX_V_TOTAL
+        return Constants.MIN_V_TOTAL[self.type] <= self.v_total <= Constants.MAX_V_TOTAL[self.type]
         pass
 
     def is_valid_h_rate(self):
-        return Constants.MIN_H_RATE <= self.h_rate <= Constants.MAX_H_RATE
-        pass
+        return Constants.MIN_H_RATE[self.type] <= self.h_rate <= Constants.MAX_H_RATE[self.type]
 
     def is_valid_p_clock(self):
-        return Constants.MIN_P_CLOCK <= self.p_clock <= Constants.MAX_P_CLOCK
-        pass
+        return Constants.MIN_P_CLOCK[self.type] <= self.p_clock <= Constants.MAX_P_CLOCK[self.type]
 
     def is_valid_actual_v_rate(self):
-        return Constants.MIN_ACTUAL_V_RATE <= self.actual_v_rate <= Constants.MAX_ACTUAL_V_RATE
+        return Constants.MIN_ACTUAL_V_RATE[self.type] <= self.actual_v_rate <= Constants.MAX_ACTUAL_V_RATE[self.type]
         pass
 
     def is_valid_actual_h_rate(self):
-        return Constants.MIN_ACTUAL_H_RATE <= self.actual_h_rate <= Constants.MAX_ACTUAL_H_RATE
+        return Constants.MIN_ACTUAL_H_RATE[self.type] <= self.actual_h_rate <= Constants.MAX_ACTUAL_H_RATE[self.type]
         pass
 
     def is_supported_h_active(self):
-        return Constants.MIN_H_ACTIVE <= self.h_active <= Constants.MAX_H_ACTIVE
+        return Constants.MIN_H_ACTIVE[1] <= self.h_active <= Constants.MAX_H_ACTIVE[1]
+
     def is_supported_h_front(self):
-        return Constants.MIN_H_FRONT <= self.h_front <= Constants.MAX_H_FRONT
+        return Constants.MIN_H_FRONT[1] <= self.h_front <= Constants.MAX_H_FRONT[1]
  
     def is_supported_h_sync(self):
-        return Constants.MIN_H_SYNC <= self.h_sync <= Constants.MAX_H_SYNC
+        return Constants.MIN_H_SYNC[1] <= self.h_sync <= Constants.MAX_H_SYNC[1]
 
     def is_supported_h_back(self):
-        return self.get_min_h_back() <= self.h_back <= self.get_max_h_back()
+        return self.get_min_h_back(1) <= self.h_back <= self.get_max_h_back(1)
  
     def is_supported_h_blank(self):
-        return self.get_min_h_blank() <= self.h_blank <= self.get_max_h_blank()
+        return self.get_min_h_blank(1) <= self.h_blank <= self.get_max_h_blank(1)
  
     def is_supported_h_total(self):
-        return self.get_min_h_total() <= self.h_total <= self.get_max_h_total()
+        return self.get_min_h_total(1) <= self.h_total <= self.get_max_h_total(1)
  
     def is_supported_v_active(self):
-        return Constants.MIN_V_ACTIVE <= self.v_active <= Constants.MAX_V_ACTIVE
+        return Constants.MIN_V_ACTIVE[1] <= self.v_active <= Constants.MAX_V_ACTIVE[1]
 
     def is_supported_v_front(self):
-        return Constants.MIN_V_FRONT <= self.v_front <= Constants.MAX_V_FRONT
+        return Constants.MIN_V_FRONT[1] <= self.v_front <= Constants.MAX_V_FRONT[1]
  
     def is_supported_v_sync(self):
-        return Constants.MIN_V_SYNC <= self.v_sync <= Constants.MAX_V_SYNC
+        return Constants.MIN_V_SYNC[1] <= self.v_sync <= Constants.MAX_V_SYNC[1]
 
     def is_supported_v_back(self):
-        return self.get_min_v_back() <= self.v_back <= self.get_max_v_back()
+        return self.get_min_v_back(1) <= self.v_back <= self.get_max_v_back(1)
  
     def is_supported_v_blank(self):
-        return self.get_min_v_blank() <= self.v_blank <= self.get_max_v_blank()
+        return self.get_min_v_blank(1) <= self.v_blank <= self.get_max_v_blank(1)
  
     def is_supported_v_total(self):
-        return self.get_min_v_total() <= self.v_total <= Constants.get_max_v_total()
+        return self.get_min_v_total(1) <= self.v_total <= self.get_max_v_total(1)
 
     def is_supported_v_rate(self):
-        return Constants.MIN_V_RATE <= self.v_rate <= Constants.MAX_V_RATE
+        return Constants.MIN_V_RATE[1] <= self.v_rate <= Constants.MAX_V_RATE[1]
  
     def is_supported_h_rate(self):
-        return Constants.MIN_H_RATE <= self.h_rate <= Constants.MAX_H_RATE
+        return Constants.MIN_H_RATE[1] <= self.h_rate <= Constants.MAX_H_RATE[1]
  
     def is_supported_p_clock(self):
-        return Constants.MIN_P_CLOCK <= self.p_clock <= Constants.MAX_P_CLOCK
+        return Constants.MIN_P_CLOCK[1] <= self.p_clock <= Constants.MAX_P_CLOCK[1]
 
     def is_supported_actual_v_rate(self):
-        return Constants.MIN_V_RATE <= self.actual_v_rate <= Constants.MAX_V_RATE
+        return Constants.MIN_V_RATE[1] <= self.actual_v_rate <= Constants.MAX_V_RATE[1]
 
     def is_supported_actual_h_rate(self):
-        return Constants.MIN_H_RATE <= self.actual_h_rate <= Constants.MAX_H_RATE
-    def get_min_h_back(self):
-        return Constants.MIN_H_BACK
+        return Constants.MIN_H_RATE[1] <= self.actual_h_rate <= Constants.MAX_H_RATE[1]
 
-    def get_max_h_back(self):
-        inrangehfront = inrange(self.h_front, Constants.MIN_H_FRONT, Constants.MAX_H_FRONT)
-        inrangehsync = inrange(self.h_sync, Constants.MIN_H_SYNC, Constants.MAX_H_SYNC)
-        return min(Constants.MAX_H_BACK, Constants.MAX_H_BLANK - inrangehfront - inrangehsync)
+    def get_min_h_back(self, type):
+        return Constants.MIN_H_BACK[type]
 
-    def get_min_h_blank(self):
-        inrangehfront = inrange(self.h_front, Constants.MIN_H_FRONT, Constants.MAX_H_FRONT)
-        inrangehsync = inrange(self.h_sync, Constants.MIN_H_SYNC, Constants.MAX_H_SYNC)
-        return max(Constants.MIN_H_BLANK, inrangehfront + inrangehsync + Constants.MIN_H_BACK)
+    def get_max_h_back(self, type):
+        inrangehfront = inrange(self.h_front, Constants.MIN_H_FRONT[type], Constants.MAX_H_FRONT[type])
+        inrangehsync = inrange(self.h_sync, Constants.MIN_H_SYNC[type], Constants.MAX_H_SYNC[type])
+        return min(Constants.MAX_H_BACK[type], Constants.MAX_H_BLANK[type] - inrangehfront - inrangehsync)
+
+    def get_min_h_blank(self, type):
+        inrangehfront = inrange(self.h_front, Constants.MIN_H_FRONT[type], Constants.MAX_H_FRONT[type])
+        inrangehsync = inrange(self.h_sync, Constants.MIN_H_SYNC[type], Constants.MAX_H_SYNC[type])
+        return max(Constants.MIN_H_BLANK[type], inrangehfront + inrangehsync + Constants.MIN_H_BACK[type])
     
-    def get_max_h_blank(self):
-        return Constants.MAX_H_BLANK
+    def get_max_h_blank(self, type):
+        return Constants.MAX_H_BLANK[type]
 
-    def get_min_h_total(self):
-        inrangehactive = inrange(self.h_active, Constants.MIN_H_ACTIVE, Constants.MAX_H_ACTIVE)
-        inrangehfront = inrange(self.h_front, Constants.MIN_H_FRONT, Constants.MAX_H_FRONT)
-        inrangehsync = inrange(self.h_sync, Constants.MIN_H_SYNC, Constants.MAX_H_SYNC)
-        return max(Constants.MIN_H_TOTAL, inrangehactive + inrangehfront + inrangehsync + Constants.MIN_H_BACK)
+    def get_min_h_total(self, type):
+        inrangehactive = inrange(self.h_active, Constants.MIN_H_ACTIVE[type], Constants.MAX_H_ACTIVE[type])
+        inrangehfront = inrange(self.h_front, Constants.MIN_H_FRONT[type], Constants.MAX_H_FRONT[type])
+        inrangehsync = inrange(self.h_sync, Constants.MIN_H_SYNC[type], Constants.MAX_H_SYNC[type])
+        return max(Constants.MIN_H_TOTAL[type], inrangehactive + inrangehfront + inrangehsync + Constants.MIN_H_BACK[type])
 
-    def get_max_h_total(self):
-        if self.h_active < Constants.MIN_H_ACTIVE or self.h_active > Constants.MAX_H_ACTIVE:
-            return Constants.MAX_H_TOTAL
-        inrangehactive = inrange(self.h_active, Constants.MIN_H_ACTIVE, Constants.MAX_H_ACTIVE)
-        return min(Constants.MAX_H_TOTAL, inrangehactive + Constants.MAX_H_BLANK)
+    def get_max_h_total(self, type):
+        if self.h_active < Constants.MIN_H_ACTIVE[type] or self.h_active > Constants.MAX_H_ACTIVE[type]:
+            return Constants.MAX_H_TOTAL[type]
+        inrangehactive = inrange(self.h_active, Constants.MIN_H_ACTIVE[type], Constants.MAX_H_ACTIVE[type])
+        return min(Constants.MAX_H_TOTAL[type], inrangehactive + Constants.MAX_H_BLANK[type])
+        
 
-    def get_min_v_back(self):
-        return Constants.MIN_V_BACK
+    def get_min_v_back(self, type):
+        return Constants.MIN_V_BACK[type]
 
-    def get_max_v_back(self):
-        inrangevfront = inrange(self.v_front, Constants.MIN_V_FRONT, Constants.MAX_V_FRONT)
-        inrangevsync = inrange(self.v_sync, Constants.MIN_V_SYNC, Constants.MAX_V_SYNC)
-        return min(Constants.MAX_V_BACK, Constants.MAX_V_BLANK - inrangevfront - inrangevsync)
+    def get_max_v_back(self, type):
+        inrangevfront = inrange(self.v_front, Constants.MIN_V_FRONT[type], Constants.MAX_V_FRONT[type])
+        inrangevsync = inrange(self.v_sync, Constants.MIN_V_SYNC[type], Constants.MAX_V_SYNC[type])
+        return min(Constants.MAX_V_BACK[type], Constants.MAX_V_BLANK[type] - inrangevfront - inrangevsync)
 
-    def get_min_v_blank(self):
-        inrangevfront = inrange(self.v_front, Constants.MIN_V_FRONT, Constants.MAX_V_FRONT)
-        inrangevsync = inrange(self.v_sync, Constants.MIN_V_SYNC, Constants.MAX_V_SYNC)
-        return max(Constants.MIN_V_BLANK, inrangevfront + inrangevsync + Constants.MIN_V_BACK)
+    def get_min_v_blank(self, type):
+        inrangevfront = inrange(self.v_front, Constants.MIN_V_FRONT[type], Constants.MAX_V_FRONT[type])
+        inrangevsync = inrange(self.v_sync, Constants.MIN_V_SYNC[type], Constants.MAX_V_SYNC[type])
+        return max(Constants.MIN_V_BLANK[type], inrangevfront + inrangevsync + Constants.MIN_V_BACK[type])
 
-    def get_max_v_blank(self):
-        return Constants.MAX_V_BLANK
+    def get_max_v_blank(self, type):
+        return Constants.MAX_V_BLANK[type]
 
-    def get_min_v_total(self):
-        inrangevactive = inrange(self.v_active, Constants.MIN_V_ACTIVE, Constants.MAX_V_ACTIVE)
-        inrangevfront = inrange(self.v_front, Constants.MIN_V_FRONT, Constants.MAX_V_FRONT)
-        inrangevsync = inrange(self.v_sync, Constants.MIN_V_SYNC, Constants.MAX_V_SYNC)
-        return max(Constants.MIN_V_TOTAL, inrangevactive + inrangevfront + inrangevsync + Constants.MIN_V_BACK)
+    def get_min_v_total(self, type):
+        inrangevactive = inrange(self.v_active, Constants.MIN_V_ACTIVE[type], Constants.MAX_V_ACTIVE[type])
+        inrangevfront = inrange(self.v_front, Constants.MIN_V_FRONT[type], Constants.MAX_V_FRONT[type])
+        inrangevsync = inrange(self.v_sync, Constants.MIN_V_SYNC[type], Constants.MAX_V_SYNC[type])
+        return max(Constants.MIN_V_TOTAL[type], inrangevactive + inrangevfront + inrangevsync + Constants.MIN_V_BACK[type])
 
-    def get_max_v_total(self):
-        if self.v_active < Constants.MIN_V_ACTIVE or self.v_active > Constants.MAX_V_ACTIVE:
-            return Constants.MAX_V_TOTAL
-        inrangevactive = inrange(self.v_active, Constants.MIN_V_ACTIVE, Constants.MAX_V_ACTIVE)
-        return min(Constants.MAX_V_TOTAL, inrangevactive + Constants.MAX_V_BLANK)
+    def get_max_v_total(self, type):
+        if self.v_active < Constants.MIN_V_ACTIVE[type] or self.v_active > Constants.MAX_V_ACTIVE[type]:
+            return Constants.MAX_V_TOTAL[type]
+        inrangevactive = inrange(self.v_active, Constants.MIN_V_ACTIVE[type], Constants.MAX_V_ACTIVE[type])
+        return min(Constants.MAX_V_TOTAL[type], inrangevactive + Constants.MAX_V_BLANK[type])
 
 
 
-__all__ = ['DetailedResolution']
+__all__ = ['DetailedResolution', 'new_detailed_resolution']

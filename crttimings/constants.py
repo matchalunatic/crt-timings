@@ -2,41 +2,46 @@ class Constants(object):
     BLANK = int(-2147483647)
 
     MIN_TIMING = 0
-    MAX_TIMING = 0
+    MAX_TIMING = 5
 
-    MIN_H_ACTIVE = 1
-    MAX_H_ACTIVE = 65536
-    MIN_H_FRONT = 1
-    MAX_H_FRONT = 32768
-    MIN_H_SYNC = 1
-    MAX_H_SYNC = 65536
-    MIN_H_BACK = 0
-    MAX_H_BACK = 65534
-    MIN_H_BLANK = 2
-    MAX_H_BLANK = 65536
-    MIN_H_TOTAL = 3
-    MAX_H_TOTAL = 131072
+    MIN_H_ACTIVE = (1, 1)
+    MAX_H_ACTIVE = (4095, 65536)
+    MIN_H_FRONT = (1, 1)
+    MAX_H_FRONT = (1023, 32768)
+    MIN_H_SYNC = (1, 1)
+    MAX_H_SYNC = (1023, 65536)
+    MIN_H_BACK = (0, 0)
+    MAX_H_BACK = (4093, 65534)
+    MIN_H_BLANK = (2, 2)
+    MAX_H_BLANK = (4095, 65536)
+    MIN_H_TOTAL = (3, 3)
+    MAX_H_TOTAL = (8190, 131072)
     
-    MIN_V_ACTIVE = 1
-    MAX_V_ACTIVE = 65536
-    MIN_V_FRONT = 1
-    MAX_V_FRONT = 63
-    MIN_V_SYNC = 1
-    MAX_V_SYNC = 63
-    MIN_V_BACK = 0
-    MAX_V_BACK = 65534
-    MIN_V_BLANK = 2
-    MAX_V_BLANK = 65536
-    MIN_V_TOTAL = 3
-    MAX_V_TOTAL = 131072
+    MIN_V_ACTIVE = (1, 1)
+    MAX_V_ACTIVE = (4095, 65536)
+    MIN_V_FRONT = (1, 1)
+    MAX_V_FRONT = (63, 32768)
+    MIN_V_SYNC = (1, 1)
+    MAX_V_SYNC = (63, 65536)
+    MIN_V_BACK = (0, 0)
+    MAX_V_BACK = (4093, 65534)
+    MIN_V_BLANK = (2, 2)
+    MAX_V_BLANK = (4095, 65536)
+    MIN_V_TOTAL = (3, 3)
+    MAX_V_TOTAL = (8190, 131072)
 
-    MIN_V_RATE = 1
-    MAX_V_RATE = 10000000
-    MIN_H_RATE = 1
-    MAX_H_RATE = 10000000
-    MIN_P_CLOCK = 1
-    MAX_P_CLOCK = 16777216
+    MIN_V_RATE = (1, 1)
+    MAX_V_RATE = (10000000, 10000000)
+    MIN_H_RATE = (1, 1)
+    # 1/10 Hz
+    MAX_H_RATE = (10000000, 10000000)
+    MIN_P_CLOCK = (1, 1)
+    # kHz here
+    MAX_P_CLOCK = (65535, 16777216)
     
+    INTERLACED_AVAILABLE = (True, True)
+    NATIVE_AVAILABLE = (False, True)
+
     ASPECT_V_SYNC = (
       (2205, 2295, 5), # 2250 (16:9)
       (2352, 2448, 7), # 2400 (15:9)
